@@ -1,271 +1,192 @@
-﻿using System;
-using System.Collections.Generic;
-
-// Helper classes
-class Cell
-{
-    public int X { get; set; }
-    public int Y { get; set; }
-    public char Value { get; set; }
-    public bool IsMovable { get; set; } = false;
-    public bool IsCrossable { get; set; } = true;
-}
-
-class Grass : Cell
-{
-    public Grass(int x, int y)
-    {
-        X = x;
-        Y = y;
-        Value = '#';
-        IsMovable = true;
-    }
-}
-
-class Tree : Cell
-{
-    public Tree(int x, int y)
-    {
-        X = x;
-        Y = y;
-        Value = 'T';
-        IsCrossable = false;
-        IsMovable = false;
-    }
-}
-
-class Character : Cell
-{
-    public int Health { get; set; } = 100;
-    public Character(int x, int y)
-    {
-        X = x;
-        Y = y;
-        Value = 'C';
-        IsMovable = true;
-        IsCrossable = false;
-    }
-}
-
-class Rock : Cell
-{
-    public Rock(int x, int y)
-    {
-        X = x;
-        Y = y;
-        Value = 'R';
-        IsMovable = true;
-        IsCrossable = false;
-    }
-}
-
-class Plate : Cell
-{
-    public bool IsActivated { get; set; } = false;
-    public Plate(int x, int y)
-    {
-        X = x;
-        Y = y;
-        Value = 'O';
-        IsMovable = false;
-        IsCrossable = true;
-    }
-}
-
+using System;
 
 public class Game
 {
-    private char[,] board;
+    private const int Width = 10;
+    private const int Height = 10;
+
+    private enum TileType { Grass, Stone, Tree, PlateInactive, PlateActive, Player }
+
+    private TileType[,] gameBoard;
     private int playerX, playerY;
-    private List<Rock> rocks;
-    private List<Plate> plates;
-    private char currentPlayer = 'X';
+    private int platesToActivate;
 
-    public Game()
+    public Game(char[,] level)
     {
-        board = new char[10, 10];
-        playerX = 5;
-        playerY = 5;
-        rocks = new List<Rock>();
-        plates = new List<Plate>();
-        InitializeBoard();
-    }
+        gameBoard = new TileType[Height, Width];
+        platesToActivate = 0;
 
-    private void InitializeBoard()
-    {
-        for (int i = 0; i < 10; i++)
+        for (int y = 0; y < Height; y++)
         {
-            for (int j = 0; j < 10; j++)
+            for (int x = 0; x < Width; x++)
             {
-                board[i, j] = '#';
+                switch (level[y, x])
+                {
+                    case '#': gameBoard[y, x] = TileType.Grass; break;
+                    case 'R': gameBoard[y, x] = TileType.Stone; break;
+                    case 'T': gameBoard[y, x] = TileType.Tree; break;
+                    case 'O': gameBoard[y, x] = TileType.PlateInactive; platesToActivate++; break;
+                    case 'C': gameBoard[y, x] = TileType.Player; playerX = x; playerY = y; break;
+                }
             }
         }
-
-        // Trees
-        board[0, 0] = 'T'; board[0, 9] = 'T'; board[9, 0] = 'T'; board[9, 9] = 'T';
-        board[3, 3] = 'T'; board[6, 6] = 'T';
-
-        // Rocks
-        rocks.Add(new Rock(2, 2));
-        rocks.Add(new Rock(7, 3));
-        board[2, 2] = 'R';
-        board[7, 3] = 'R';
-
-        // Plates
-        plates.Add(new Plate(1, 1));
-        plates.Add(new Plate(1, 8));
-        plates.Add(new Plate(8, 1));
-        plates.Add(new Plate(8, 8));
-        board[1, 1] = 'O';
-        board[1, 8] = 'O';
-        board[8, 1] = 'O';
-        board[8, 8] = 'O';
     }
 
-    private void PrintBoard()
+    public bool Play()
     {
-        Console.ForegroundColor = ConsoleColor.Green;
-        Console.WriteLine("----------------------------------------");
-        for (int i = 0; i < 10; i++)
+        while (true)
         {
-            Console.Write("| ");
-            for (int j = 0; j < 10; j++)
+            DrawBoard();
+
+            ConsoleKeyInfo keyInfo = Console.ReadKey(true);
+            int newX = playerX;
+            int newY = playerY;
+
+            switch (keyInfo.Key)
             {
-                char c = board[i, j];
-                if (c == 'R') Console.ForegroundColor = ConsoleColor.DarkGray;
-                else if (c == 'T') Console.ForegroundColor = ConsoleColor.DarkGreen;
-                else if (c == 'O' || c == 'Ⓡ' || c == 'Ⓒ') Console.ForegroundColor = ConsoleColor.Yellow;
-                else if (c == 'C') Console.ForegroundColor = ConsoleColor.Blue;
-                else Console.ForegroundColor = ConsoleColor.Green;
-                Console.Write(c == ' ' ? "  " : $"{c} ");
-                Console.ResetColor();
-                Console.Write("| ");
+                case ConsoleKey.UpArrow: newY--; break;
+                case ConsoleKey.DownArrow: newY++; break;
+                case ConsoleKey.LeftArrow: newX--; break;
+                case ConsoleKey.RightArrow: newX++; break;
             }
-            Console.WriteLine("\n----------------------------------------");
+
+            if (TryMove(newX, newY))
+            {
+                if (CheckWinCondition()) return true;
+            }
         }
     }
 
-    private bool IsValidMove(int newX, int newY)
+    private bool TryMove(int newX, int newY)
     {
-        return newX >= 0 && newX < 10 && newY >= 0 && newY < 10 && board[newX, newY] != 'T';
-    }
+        if (newX < 0 || newX >= Width || newY < 0 || newY >= Height) return false;
 
-    private bool IsPlate(int x, int y)
-    {
-        foreach (var p in plates)
+        if (gameBoard[newY, newX] == TileType.Stone)
         {
-            if (p.X == x && p.Y == y) return true;
+            return TryPushStone(newX, newY);
+        }
+        else if (gameBoard[newY, newX] != TileType.Tree)
+        {
+            MovePlayer(newX, newY);
+            return true;
         }
         return false;
     }
 
-    private void ActivatePlate(int x, int y)
+    private bool TryPushStone(int newX, int newY)
     {
-        foreach (var p in plates)
-        {
-            if (p.X == x && p.Y == y && !p.IsActivated)
-            {
-                p.IsActivated = true;
-                board[x, y] = (currentPlayer == 'X') ? 'Ⓡ' : 'Ⓒ';
-            }
-        }
-    }
+        int pushX = newX + (newX - playerX);
+        int pushY = newY + (newY - playerY);
 
-    private bool AreAllPlatesActivated()
-    {
-        foreach (var p in plates)
+        if (pushX < 0 || pushX >= Width || pushY < 0 || pushY >= Height || gameBoard[pushY, pushX] == TileType.Stone || gameBoard[pushY, pushX] == TileType.Tree)
         {
-            if (!p.IsActivated) return false;
+            return false;
         }
+
+        gameBoard[newY, newX] = TileType.Player;
+        gameBoard[playerY, playerX] = TileType.Grass;
+        gameBoard[pushY, pushX] = TileType.Stone;
+        playerX = newX;
+        playerY = newY;
         return true;
     }
 
-    private bool MoveRock(int rockX, int rockY, int dx, int dy)
+    private void MovePlayer(int newX, int newY)
     {
-        int newRockX = rockX + dx;
-        int newRockY = rockY + dy;
-        if (!IsValidMove(newRockX, newRockY) || board[newRockX, newRockY] == 'R') return false;
-        board[newRockX, newRockY] = 'R';
-        board[rockX, rockY] = '#';
-        foreach (var r in rocks)
-        {
-            if (r.X == rockX && r.Y == rockY)
-            {
-                r.X = newRockX;
-                r.Y = newRockY;
-                return true;
-            }
-        }
-        return false;
+        gameBoard[newY, newX] = TileType.Player;
+        gameBoard[playerY, playerX] = TileType.Grass;
+        playerX = newX;
+        playerY = newY;
+        ActivatePlateIfNeeded(newX, newY);
     }
 
-    public void PlayGame()
+
+    private void ActivatePlateIfNeeded(int x, int y)
     {
-        board[playerX, playerY] = 'C';
-
-        while (true)
+        if (gameBoard[y, x] == TileType.PlateInactive)
         {
-            PrintBoard();
-            Console.WriteLine($"Ход игрока {currentPlayer}: (w-a-s-d)");
-
-            ConsoleKeyInfo key = Console.ReadKey(true);
-            int dx = 0, dy = 0;
-
-            switch (key.Key)
-            {
-                case ConsoleKey.W: dy = -1; break;
-                case ConsoleKey.S: dy = 1; break;
-                case ConsoleKey.A: dx = -1; break;
-                case ConsoleKey.D: dx = 1; break;
-                default: continue;
-            }
-
-            int newPlayerX = playerX + dx;
-            int newPlayerY = playerY + dy;
-
-            if (IsValidMove(newPlayerX, newPlayerY))
-            {
-                bool movedRock = false;
-                foreach (var rock in rocks)
-                {
-                    if (rock.X == newPlayerX && rock.Y == newPlayerY)
-                    {
-                        if (MoveRock(rock.X, rock.Y, dx, dy))
-                        {
-                            movedRock = true;
-                        }
-                        else
-                        {
-                            Console.WriteLine("Камень не может двигаться в этом направлении!");
-                        }
-                    }
-                }
-                if (!movedRock)
-                {
-                    board[playerX, playerY] = '#';
-                    playerX = newPlayerX;
-                    playerY = newPlayerY;
-                    board[playerX, playerY] = 'C';
-                }
-                ActivatePlate(playerX, playerY);
-
-                if (AreAllPlatesActivated())
-                {
-                    Console.WriteLine("Победа!");
-                    break;
-                }
-                currentPlayer = (currentPlayer == 'X') ? 'O' : 'X';
-            }
-            else
-            {
-                Console.WriteLine("Неверный ход!");
-            }
+            gameBoard[y, x] = TileType.PlateActive;
         }
     }
+
+    private bool CheckWinCondition()
+    {
+        int activatedPlates = 0;
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                if (gameBoard[y, x] == TileType.PlateActive)
+                    activatedPlates++;
+            }
+        }
+        return activatedPlates == platesToActivate;
+    }
+
+
+    private void DrawBoard()
+    {
+        Console.Clear();
+        for (int y = 0; y < Height; y++)
+        {
+            for (int x = 0; x < Width; x++)
+            {
+                Console.ForegroundColor = GetTileColor(gameBoard[y, x]);
+                Console.Write(GetTileSymbol(gameBoard[y, x]));
+                Console.ResetColor();
+            }
+            Console.WriteLine();
+        }
+    }
+
+
+    private ConsoleColor GetTileColor(TileType type)
+    {
+        switch (type)
+        {
+            case TileType.Grass: return ConsoleColor.Green;
+            case TileType.Stone: return ConsoleColor.DarkGray;
+            case TileType.Tree: return ConsoleColor.DarkGreen;
+            case TileType.PlateInactive: return ConsoleColor.DarkYellow;
+            case TileType.PlateActive: return ConsoleColor.Yellow;
+            case TileType.Player: return ConsoleColor.White;
+            default: return ConsoleColor.White;
+        }
+    }
+
+    private char GetTileSymbol(TileType type)
+    {
+        switch (type)
+        {
+            case TileType.Grass: return '#';
+            case TileType.Stone: return 'R';
+            case TileType.Tree: return 'T';
+            case TileType.PlateInactive: return 'O';
+            case TileType.PlateActive: return 'Ⓡ';
+            case TileType.Player: return 'C';
+            default: return ' ';
+        }
+    }
+
+
 
     public static void Main(string[] args)
     {
-        Game game = new Game();
-        game.PlayGame();
+        //Example Level
+        char[,] level1 = {
+            {'#', '#', '#', '#', '#', '#', '#', '#', '#', '#'},
+            {'#', 'R', '#', '#', '#', 'O', '#', '#', '#', '#'},
+            {'#', '#', '#', '#', '#', '#', '#', '#', 'O', '#'},
+            {'#', '#', '#', '#', '#', 'T', '#', '#', '#', '#'},
+            {'#', '#', '#', 'O', '#', '#', '#', '#', '#', '#'},
+            {'#', '#', '#', '#', '#', '#', '#', 'R', '#', '#'},
+            {'#', '#', '#', '#', '#', '#', '#', '#', '#', '#'},
+            {'#', 'O', '#', '#', '#', '#', '#', '#', '#', '#'},
+            {'#', '#', '#', '#', '#', '#', '#', '#', 'C', '#'},
+            {'#', '#', '#', '#', '#', '#', '#', '#', '#', '#'}
+        };
+
+        Game game = new Game(level1);
+        if (game.Play()) Console.WriteLine("Вы выиграли!");
     }
 }
